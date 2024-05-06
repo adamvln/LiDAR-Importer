@@ -63,6 +63,8 @@ class IMPORT_OT_las_data(Operator, ImportHelper):
                                 point['Y'] * infile.header.y_scale + infile.header.y_offset,
                                 point['Z'] * infile.header.z_scale + infile.header.z_offset)
                                 for point in all_points])
+            
+            colors = (np.vstack((all_points['red'], all_points['green'], all_points['blue'])).T)/65536
 
             # Prepare LiDAR info
             lidar_info = {
@@ -73,11 +75,11 @@ class IMPORT_OT_las_data(Operator, ImportHelper):
             }
 
         # Import LAS points as a mesh
-        self.import_points_as_mesh(context, points, lidar_info)
+        self.import_points_as_mesh(context, points, colors, lidar_info)
 
         return {'FINISHED'}
 
-    def import_points_as_mesh(self, context, points, lidar_info):
+    def import_points_as_mesh(self, context, points, colors, lidar_info):
         # Create a new mesh object
         mesh = bpy.data.meshes.new("LAS Data")
         obj = bpy.data.objects.new("LAS Data", mesh)
@@ -99,7 +101,19 @@ class IMPORT_OT_las_data(Operator, ImportHelper):
         obj['lidar_point_count_by_return'] = get_attribute(lidar_info['header'], 'point_count_by_return')
 
         # Create mesh vertices from points
-        mesh.from_pydata(points, [], [])
+        num_vertices = len(points)
+        faces = [(i, i, i) for i in range(num_vertices)] 
+
+        mesh.from_pydata(points, [], faces)
+        mesh.update()  # Update mesh data
+
+        
+        vertex_colors = mesh.vertex_colors.new(name="Col") if "Col" not in mesh.vertex_colors else mesh.vertex_colors["Col"]
+        
+        # Assign colors through loops
+        for loop in mesh.loops:
+            loop_color = colors[loop.vertex_index]
+            vertex_colors.data[loop.index].color = (*loop_color, 1.0)  # Ensure RGBA (A=1.0)
 
         # Set mesh object's origin to the center of its bounding box and location to (0, 0, 0)
         min_coords = [min(points, key=lambda coord: coord[i])[i] for i in range(3)]
